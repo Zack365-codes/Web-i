@@ -83,6 +83,20 @@ if (isset($pdo)) {
         $total_realized_profit = (float)$all_sales_data['total_profit'];
         $total_market_due = (float)$all_sales_data['total_due'];
 
+        // Today's Sales Returns stats
+        $today_returns_count = 0;
+        $today_returns_refund = 0;
+        try {
+            $ret_stmt = $pdo->query("SELECT COUNT(*) as r_cnt, COALESCE(SUM(total_refund_amount), 0) as r_ref FROM sales_returns WHERE DATE(created_at) = CURDATE()");
+            if ($r_data = $ret_stmt->fetch()) {
+                $today_returns_count = (int)$r_data['r_cnt'];
+                $today_returns_refund = (float)$r_data['r_ref'];
+            }
+        } catch (Exception $e) {}
+
+        // Net Today's Revenue (Sales minus Returns)
+        $today_sales_net = max(0, $today_sales_total - $today_returns_refund);
+
         // Supplier / Purchases stats
         $pur_stmt = $pdo->query("SELECT COUNT(*) as total_pur_count, COALESCE(SUM(due_amount), 0) as total_sup_due, COALESCE(SUM(total_weight_kg), 0) as total_pur_kg FROM purchases");
         $pur_data = $pur_stmt->fetch();
@@ -132,9 +146,12 @@ if (isset($pdo)) {
                     <i class="fa-solid fa-calendar-day"></i>
                 </div>
             </div>
-            <div class="stat-value text-success"><?= format_currency($today_sales_total, 0) ?></div>
+            <div class="stat-value text-success"><?= format_currency($today_sales_net, 0) ?></div>
             <div class="small text-muted mt-2">
-                <i class="fa-solid fa-clock me-1"></i> Today's sales & billing total
+                <i class="fa-solid fa-clock me-1"></i> Today's net sales
+                <?php if ($today_returns_count > 0): ?>
+                    &bull; <a href="returns.php" class="text-danger fw-bold text-decoration-none"><i class="fa-solid fa-rotate-left"></i> <?= $today_returns_count ?> Return (-Rs. <?= number_format($today_returns_refund, 0) ?>)</a>
+                <?php endif; ?>
             </div>
         </div>
     </div>

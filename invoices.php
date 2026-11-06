@@ -158,8 +158,11 @@ if (isset($pdo)) {
                                 <a href="invoice_print.php?id=<?= $inv['id'] ?>&autoprint=1" target="_blank" class="btn btn-outline-success btn-sm me-1" title="Print Bill">
                                     <i class="fa-solid fa-print me-1"></i> Print
                                 </a>
-                                <a href="invoice_print.php?id=<?= $inv['id'] ?>" class="btn btn-outline-primary btn-sm" title="View Bill">
+                                <a href="invoice_print.php?id=<?= $inv['id'] ?>" class="btn btn-outline-primary btn-sm me-1" title="View Bill">
                                     <i class="fa-solid fa-eye"></i>
+                                </a>
+                                <a href="return_add.php?sale_id=<?= $inv['id'] ?>" class="btn btn-outline-danger btn-sm" title="Return / Wapsi Items from this Bill">
+                                    <i class="fa-solid fa-rotate-left"></i>
                                 </a>
                             </td>
                         </tr>

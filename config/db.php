@@ -250,6 +250,44 @@ try {
         WHERE `sell_price_per_kg` > 0 OR `sell_price_per_piece` > 0
     ");
 
+    // 13. Sales Returns Tables (Maal Wapsi / Credit Notes)
+    $createReturnsTable = "
+    CREATE TABLE IF NOT EXISTS `sales_returns` (
+        `id` INT AUTO_INCREMENT PRIMARY KEY,
+        `return_no` VARCHAR(50) NOT NULL UNIQUE,
+        `sale_id` INT NULL,
+        `invoice_no` VARCHAR(50) NULL,
+        `customer_name` VARCHAR(150) NOT NULL,
+        `customer_phone` VARCHAR(50) NULL,
+        `total_refund_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+        `total_returned_weight_kg` DECIMAL(14,3) NOT NULL DEFAULT 0.000,
+        `refund_method` ENUM('Cash', 'Deduct from Khata', 'Credit Balance') NOT NULL DEFAULT 'Cash',
+        `reason` TEXT NULL,
+        `created_by` VARCHAR(50) NULL,
+        `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (`sale_id`) REFERENCES `sales`(`id`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ";
+    $pdo->exec($createReturnsTable);
+
+    $createReturnItemsTable = "
+    CREATE TABLE IF NOT EXISTS `sales_return_items` (
+        `id` INT AUTO_INCREMENT PRIMARY KEY,
+        `return_id` INT NOT NULL,
+        `sale_item_id` INT NULL,
+        `product_id` INT NOT NULL,
+        `product_name` VARCHAR(150) NOT NULL,
+        `sale_unit` ENUM('kg', 'feet', 'piece') NOT NULL,
+        `quantity_returned` DECIMAL(10,3) NOT NULL,
+        `unit_price` DECIMAL(12,2) NOT NULL,
+        `refund_subtotal` DECIMAL(14,2) NOT NULL,
+        `restored_stock_kg` DECIMAL(14,3) NOT NULL DEFAULT 0.000,
+        `restored_pieces` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        FOREIGN KEY (`return_id`) REFERENCES `sales_returns`(`id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ";
+    $pdo->exec($createReturnItemsTable);
+
 } catch (PDOException $e) {
     $db_connection_error = $e->getMessage();
 }

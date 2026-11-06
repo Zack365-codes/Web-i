@@ -111,6 +111,11 @@ $user = current_user();
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link <?= in_array($current_page, ['returns.php', 'return_add.php', 'return_view.php']) ? 'active' : '' ?>" href="returns.php">
+                            <i class="fa-solid fa-rotate-left me-1 text-danger"></i> Returns
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link <?= in_array($current_page, ['customers_khata.php', 'customer_ledger.php']) ? 'active' : '' ?>" href="customers_khata.php">
                             <i class="fa-solid fa-book-bookmark me-1 text-info"></i> Customer Khata
                         </a>

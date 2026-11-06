@@ -225,7 +225,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_purchase'])) {
                     <div class="row g-3">
                         <!-- Select Product -->
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold">Select Item to Inward <span class="text-danger">*</span></label>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label fw-semibold mb-0">Select Item to Inward <span class="text-danger">*</span></label>
+                                <a href="product_add.php" target="_blank" class="btn btn-sm btn-outline-primary py-0 px-2" title="Create a new item if not in inventory">
+                                    <i class="fa-solid fa-plus me-1"></i> Create New Product First
+                                </a>
+                            </div>
                             <select id="pur_product_select" class="form-select form-select-lg">
                                 <option value="">-- Choose Item from Inventory --</option>
                                 <?php foreach ($products as $pr): 
