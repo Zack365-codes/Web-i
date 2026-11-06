@@ -14,6 +14,7 @@ $recent_products = [];
 
 // Sales & Billing Stats
 $today_sales_total = 0;
+$today_profit_total = 0;
 $today_invoices_count = 0;
 $total_invoices_count = 0;
 $total_realized_profit = 0;
@@ -63,9 +64,17 @@ if (isset($pdo)) {
         $total_projected_profit = max(0, $total_retail_value - $total_cost_value);
 
         // Fetch sales stats
-        $sales_today_stmt = $pdo->query("SELECT COALESCE(SUM(grand_total), 0) as today_rev, COUNT(*) as today_count FROM sales WHERE DATE(created_at) = CURDATE()");
+        $sales_today_stmt = $pdo->query("
+            SELECT 
+                COALESCE(SUM(grand_total), 0) as today_rev, 
+                COALESCE(SUM(total_profit), 0) as today_profit,
+                COUNT(*) as today_count 
+            FROM sales 
+            WHERE DATE(created_at) = CURDATE()
+        ");
         $today_data = $sales_today_stmt->fetch();
         $today_sales_total = (float)$today_data['today_rev'];
+        $today_profit_total = (float)$today_data['today_profit'];
         $today_invoices_count = (int)$today_data['today_count'];
 
         $sales_all_stmt = $pdo->query("SELECT COUNT(*) as total_count, COALESCE(SUM(total_profit), 0) as total_profit, COALESCE(SUM(due_amount), 0) as total_due FROM sales");
@@ -73,6 +82,13 @@ if (isset($pdo)) {
         $total_invoices_count = (int)$all_sales_data['total_count'];
         $total_realized_profit = (float)$all_sales_data['total_profit'];
         $total_market_due = (float)$all_sales_data['total_due'];
+
+        // Supplier / Purchases stats
+        $pur_stmt = $pdo->query("SELECT COUNT(*) as total_pur_count, COALESCE(SUM(due_amount), 0) as total_sup_due, COALESCE(SUM(total_weight_kg), 0) as total_pur_kg FROM purchases");
+        $pur_data = $pur_stmt->fetch();
+        $total_purchases_count = (int)($pur_data['total_pur_count'] ?? 0);
+        $total_supplier_due    = (float)($pur_data['total_sup_due'] ?? 0);
+        $total_purchased_kg    = (float)($pur_data['total_pur_kg'] ?? 0);
 
         // Recent Invoices
         $rec_inv_stmt = $pdo->query("SELECT * FROM sales ORDER BY id DESC LIMIT 5");
@@ -96,7 +112,10 @@ if (isset($pdo)) {
         <a href="pos.php" class="btn btn-success btn-lg shadow-sm me-2 fw-bold">
             <i class="fa-solid fa-cash-register me-2"></i> Make New Bill (POS)
         </a>
-        <a href="product_add.php" class="btn btn-outline-primary">
+        <a href="purchase_add.php" class="btn btn-primary me-2">
+            <i class="fa-solid fa-truck-ramp-box me-1"></i> Stock Inward
+        </a>
+        <a href="product_add.php" class="btn btn-outline-secondary">
             <i class="fa-solid fa-plus me-1"></i> Add Product
         </a>
     </div>
@@ -115,81 +134,141 @@ if (isset($pdo)) {
             </div>
             <div class="stat-value text-success"><?= format_currency($today_sales_total, 0) ?></div>
             <div class="small text-muted mt-2">
-                <i class="fa-solid fa-receipt me-1"></i> <strong><?= $today_invoices_count ?></strong> bills created today
+                <i class="fa-solid fa-clock me-1"></i> Today's sales & billing total
             </div>
         </div>
     </div>
 
-    <!-- Total Invoices / Bills -->
+    <!-- Invoices Created Today (Resets Daily) -->
     <div class="col-sm-6 col-xl-3">
-        <div class="stat-card shadow-sm h-100">
+        <div class="stat-card shadow-sm h-100" style="background: linear-gradient(135deg, #f0f9ff 0%, #ffffff 100%); border-color: #bae6fd;">
             <div class="d-flex justify-content-between align-items-center">
-                <span class="stat-label">Total Invoices Created</span>
-                <div class="stat-icon bg-info-subtle text-info">
+                <span class="stat-label text-primary fw-bold">Invoices Created Today</span>
+                <div class="stat-icon bg-info text-white">
                     <i class="fa-solid fa-file-invoice"></i>
                 </div>
             </div>
-            <div class="stat-value text-dark"><?= number_format($total_invoices_count) ?></div>
+            <div class="stat-value text-primary"><?= number_format($today_invoices_count) ?></div>
             <div class="small text-muted mt-2">
-                <a href="invoices.php" class="text-decoration-none">View All Bills &rarr;</a>
+                All-time: <strong><?= number_format($total_invoices_count) ?></strong> bills &bull; <a href="invoices.php" class="text-decoration-none">View All &rarr;</a>
             </div>
         </div>
     </div>
 
-    <!-- Total Realized Net Profit (Shielded) -->
-    <div class="col-sm-6 col-xl-3">
-        <div class="stat-card shadow-sm h-100">
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="stat-label text-success fw-bold">Realized Net Profit</span>
-                <div class="stat-icon bg-success-subtle text-success">
-                    <i class="fa-solid fa-arrow-trend-up"></i>
+    <?php if (is_super_admin()): ?>
+        <!-- Today's Net Profit (Shielded - Resets Daily - Super Admin Only) -->
+        <div class="col-sm-6 col-xl-3">
+            <div class="stat-card shadow-sm h-100" style="background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%); border-color: #86efac;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="stat-label text-success fw-bold">Today's Net Profit</span>
+                    <div class="stat-icon bg-success-subtle text-success">
+                        <i class="fa-solid fa-arrow-trend-up"></i>
+                    </div>
+                </div>
+                <div class="stat-value text-success"><?= show_profit($today_profit_total, false, 0) ?></div>
+                <div class="small text-muted mt-2">
+                    All-time: <strong><?= show_profit($total_realized_profit, false, 0) ?></strong> &bull; <a href="profit_report.php" class="text-decoration-none">Report &rarr;</a>
                 </div>
             </div>
-            <div class="stat-value"><?= show_profit($total_realized_profit, false, 0) ?></div>
-            <div class="small text-muted mt-2">
-                <a href="profit_report.php" class="text-decoration-none">View Profit Report &rarr;</a>
-            </div>
         </div>
-    </div>
 
-    <!-- Stock Projected Profit (Shielded) -->
-    <div class="col-sm-6 col-xl-3">
-        <div class="stat-card shadow-sm h-100">
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="stat-label">Stock Expected Profit</span>
-                <div class="stat-icon bg-warning-subtle text-warning">
-                    <i class="fa-solid fa-chart-pie text-dark"></i>
+        <!-- Stock Projected Profit (Shielded - Super Admin Only) -->
+        <div class="col-sm-6 col-xl-3">
+            <div class="stat-card shadow-sm h-100">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="stat-label">Stock Expected Profit</span>
+                    <div class="stat-icon bg-warning-subtle text-warning">
+                        <i class="fa-solid fa-chart-pie text-dark"></i>
+                    </div>
+                </div>
+                <div class="stat-value"><?= show_profit($total_projected_profit, false, 0) ?></div>
+                <div class="small text-muted mt-2">
+                    Stock: <strong><?= number_format($total_stock_kg, 1) ?> KG</strong> (~<?= number_format($total_stock_kg / 1000, 2) ?> Ton)
                 </div>
             </div>
-            <div class="stat-value"><?= show_profit($total_projected_profit, false, 0) ?></div>
-            <div class="small text-muted mt-2">
-                Stock: <strong><?= number_format($total_stock_kg, 1) ?> KG</strong> (~<?= number_format($total_stock_kg / 1000, 2) ?> Ton)
+        </div>
+    <?php else: ?>
+        <!-- Salesman View: Inventory & Quick POS Cards Instead of Profit -->
+        <div class="col-sm-6 col-xl-3">
+            <div class="stat-card shadow-sm h-100">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="stat-label">Total Store Stock</span>
+                    <div class="stat-icon bg-warning-subtle text-warning">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                    </div>
+                </div>
+                <div class="stat-value text-dark"><?= number_format($total_stock_kg, 1) ?> <span class="fs-6 text-muted">KG</span></div>
+                <div class="small text-muted mt-2">
+                    ~<strong><?= number_format($total_stock_kg / 1000, 2) ?></strong> Metric Ton in godown
+                </div>
             </div>
         </div>
-    </div>
+
+        <div class="col-sm-6 col-xl-3">
+            <div class="stat-card shadow-sm h-100" style="background: linear-gradient(135deg, #fefce8 0%, #ffffff 100%); border-color: #fde047;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="stat-label text-warning-emphasis fw-bold">Active Iron Products</span>
+                    <div class="stat-icon bg-warning text-dark">
+                        <i class="fa-solid fa-cubes-stacked"></i>
+                    </div>
+                </div>
+                <div class="stat-value text-dark"><?= number_format($total_products) ?></div>
+                <div class="small text-muted mt-2">
+                    <a href="products.php" class="text-decoration-none">Check Selling Rates &rarr;</a>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 </div>
 
-<!-- Market Udhar / Credit Ledger Alert Banner -->
-<?php if ($total_market_due > 0): ?>
-    <div class="card card-custom mb-4 border-danger" style="background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);">
-        <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div class="d-flex align-items-center">
-                <div class="stat-icon bg-danger text-white me-3" style="width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem;">
-                    <i class="fa-solid fa-hand-holding-dollar"></i>
+<!-- Credit & Payables Alert Banners (Customer Udhar & Supplier Payables) -->
+<div class="row g-3 mb-4">
+    <?php if ($total_market_due > 0): ?>
+        <div class="<?= $total_supplier_due > 0 ? 'col-md-6' : 'col-12' ?>">
+            <div class="card card-custom h-100 border-danger" style="background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);">
+                <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center">
+                        <div class="stat-icon bg-danger text-white me-3" style="width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem;">
+                            <i class="fa-solid fa-hand-holding-dollar"></i>
+                        </div>
+                        <div>
+                            <div class="small text-danger fw-bold text-uppercase">Market Udhar (Customer Due)</div>
+                            <div class="fs-4 fw-bold text-danger"><?= format_currency($total_market_due, 2) ?></div>
+                        </div>
+                    </div>
+                    <div>
+                        <a href="customers_khata.php" class="btn btn-danger btn-sm fw-bold px-3 shadow-sm">
+                            <i class="fa-solid fa-book-bookmark me-1"></i> Customer Khata
+                        </a>
+                    </div>
                 </div>
-                <div>
-                    <div class="small text-danger fw-bold text-uppercase">Total Market Udhar (Receivables Pending)</div>
-                    <div class="fs-4 fw-bold text-danger"><?= format_currency($total_market_due, 2) ?></div>
-                </div>
-            </div>
-            <div class="d-flex gap-2">
-                <a href="customers_khata.php" class="btn btn-danger btn-sm fw-bold px-3 shadow-sm">
-                    <i class="fa-solid fa-book-bookmark me-1"></i> Open Customer Khata
-                </a>
             </div>
         </div>
-    </div>
-<?php endif; ?>
+    <?php endif; ?>
+
+    <?php if ($total_supplier_due > 0): ?>
+        <div class="<?= $total_market_due > 0 ? 'col-md-6' : 'col-12' ?>">
+            <div class="card card-custom h-100 border-warning" style="background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);">
+                <div class="card-body p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center">
+                        <div class="stat-icon bg-warning text-dark me-3" style="width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem;">
+                            <i class="fa-solid fa-building-columns"></i>
+                        </div>
+                        <div>
+                            <div class="small text-warning-emphasis fw-bold text-uppercase">Supplier Payables (Factory Udhar)</div>
+                            <div class="fs-4 fw-bold text-dark"><?= format_currency($total_supplier_due, 2) ?></div>
+                        </div>
+                    </div>
+                    <div>
+                        <a href="suppliers_khata.php" class="btn btn-warning text-dark btn-sm fw-bold px-3 shadow-sm">
+                            <i class="fa-solid fa-building-columns me-1"></i> Supplier Khata
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
+</div>
 
 <!-- Recent Invoices with 1-Click Print -->
 <div class="card card-custom mb-4 border-success">

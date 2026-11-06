@@ -223,19 +223,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_invoice'])) {
                                 <option value="">-- Choose Product from Inventory --</option>
                                 <?php foreach ($products as $pr): 
                                     $w_piece = (float)($pr['weight_per_piece'] ?: ($pr['weight_per_foot'] * $pr['standard_length_feet']));
-                                    $pcs = $w_piece > 0 ? floor($pr['total_stock_kg'] / $w_piece) : 0;
                                     $length_ft = (float)($pr['standard_length_feet'] ?: 20);
+                                    $pcs = $w_piece > 0 ? floor($pr['total_stock_kg'] / $w_piece) : 0;
+
+                                    $sell_piece = (float)$pr['sell_price_per_piece'];
+                                    $sell_kg    = (float)$pr['sell_price_per_kg'];
+                                    $sell_foot  = (float)$pr['sell_price_per_foot'];
+
+                                    // Auto-derive missing selling rates across all units
+                                    if ($sell_kg <= 0 && $sell_piece > 0 && $w_piece > 0) {
+                                        $sell_kg = round($sell_piece / $w_piece, 2);
+                                    }
+                                    if ($sell_piece <= 0 && $sell_kg > 0 && $w_piece > 0) {
+                                        $sell_piece = round($sell_kg * $w_piece, 2);
+                                    }
+                                    if ($sell_foot <= 0) {
+                                        if ($sell_piece > 0 && $length_ft > 0) {
+                                            $sell_foot = round($sell_piece / $length_ft, 2);
+                                        } elseif ($sell_kg > 0 && (float)$pr['weight_per_foot'] > 0) {
+                                            $sell_foot = round($sell_kg * (float)$pr['weight_per_foot'], 2);
+                                        }
+                                    }
+
+                                    // Minimum allowed rates (bargain limit)
+                                    $min_piece = (float)$pr['min_price_per_piece'];
+                                    $min_kg    = (float)$pr['min_price_per_kg'];
+                                    $min_foot  = (float)$pr['min_price_per_foot'];
+
+                                    if ($min_piece <= 0 && $sell_piece > 0) {
+                                        $min_piece = round($sell_piece * 0.95, 2);
+                                    }
+                                    if ($min_kg <= 0) {
+                                        if ($min_piece > 0 && $w_piece > 0) {
+                                            $min_kg = round($min_piece / $w_piece, 2);
+                                        } elseif ($sell_kg > 0) {
+                                            $min_kg = round($sell_kg * 0.95, 2);
+                                        }
+                                    }
+                                    if ($min_foot <= 0) {
+                                        if ($min_piece > 0 && $length_ft > 0) {
+                                            $min_foot = round($min_piece / $length_ft, 2);
+                                        } elseif ($sell_foot > 0) {
+                                            $min_foot = round($sell_foot * 0.95, 2);
+                                        }
+                                    }
+                                    
+                                    // Security: Only Super Admin gets cost price in data attribute
+                                    $cost_kg_attr = is_super_admin() ? (float)$pr['cost_price_per_kg'] : 0;
                                 ?>
                                     <option value="<?= $pr['id'] ?>"
                                             data-name="<?= htmlspecialchars($pr['product_name']) ?>"
-                                            data-cost-kg="<?= $pr['cost_price_per_kg'] ?>"
-                                            data-sell-kg="<?= $pr['sell_price_per_kg'] ?>"
-                                            data-sell-piece="<?= $pr['sell_price_per_piece'] ?>"
-                                            data-sell-foot="<?= $pr['sell_price_per_foot'] ?>"
+                                            data-cost-kg="<?= $cost_kg_attr ?>"
+                                            data-sell-kg="<?= $sell_kg ?>"
+                                            data-sell-piece="<?= $sell_piece ?>"
+                                            data-sell-foot="<?= $sell_foot ?>"
+                                            data-min-kg="<?= $min_kg ?>"
+                                            data-min-piece="<?= $min_piece ?>"
+                                            data-min-foot="<?= $min_foot ?>"
                                             data-weight-piece="<?= $w_piece ?>"
-                                            data-weight-foot="<?= $pr['weight_per_foot'] ?>"
+                                            data-weight-foot="<?= (float)$pr['weight_per_foot'] ?>"
                                             data-length-feet="<?= $length_ft ?>"
-                                            data-stock-kg="<?= $pr['total_stock_kg'] ?>"
+                                            data-stock-kg="<?= (float)$pr['total_stock_kg'] ?>"
                                             data-stock-pieces="<?= $pcs ?>">
                                         <?= htmlspecialchars($pr['product_name']) ?> &bull; (Stock: <?= $pcs ?> Pcs / <?= number_format($pr['total_stock_kg'], 1) ?> KG)
                                     </option>
@@ -443,48 +491,71 @@ document.addEventListener('DOMContentLoaded', function () {
     const summaryTotalWeight = document.getElementById('summary_total_weight');
     const summaryPiecesBadge = document.getElementById('summary_pieces_badge');
 
+    const isSuperAdmin = <?= is_super_admin() ? 'true' : 'false' ?>;
     let cart = [];
 
     // When Product or Unit changes, auto-fill unit rate and update Profit Guard & Conversion
     function updateSelectedProductDetails() {
+        const unit = unitSelect.value;
         const option = productSelect.options[productSelect.selectedIndex];
+
+        // Update default quantity hint even if no product is selected yet
         if (!option || !option.value) {
             rateInput.value = '';
-            profitGuard.innerHTML = '<span class="text-muted"><i class="fa-solid fa-shield-halved me-1 text-primary"></i> <strong>Profit Guard:</strong> Select a product and unit to check profit margin.</span>';
+            if (unit === 'piece') {
+                qtyHint.innerHTML = '<span class="text-muted">Pieces (Full Bar / Pipe / Gate)</span>';
+            } else if (unit === 'kg') {
+                qtyHint.innerHTML = '<span class="text-muted">KG (Weight on Kanta)</span>';
+            } else if (unit === 'feet') {
+                qtyHint.innerHTML = '<span class="text-muted">Feet (Length in Running Feet)</span>';
+            }
+            profitGuard.innerHTML = '<span class="text-muted"><i class="fa-solid fa-circle-info text-primary me-1"></i> <strong>Piece & Weight Suggestion:</strong> Select a product to see how many Feet or KG make 1 piece and check allowed rates.</span>';
+            btnAddToCart.disabled = true;
             return;
         }
-
-        const unit = unitSelect.value;
-        let defaultRate = 0;
-        let unitCost = 0;
 
         const costKg = parseFloat(option.dataset.costKg) || 0;
         const weightPiece = parseFloat(option.dataset.weightPiece) || 0;
         const weightFoot = parseFloat(option.dataset.weightFoot) || 0;
         const lengthFeet = parseFloat(option.dataset.lengthFeet) || 20;
 
+        let sellPiece = parseFloat(option.dataset.sellPiece) || 0;
+        let sellKg    = parseFloat(option.dataset.sellKg) || 0;
+        let sellFoot  = parseFloat(option.dataset.sellFoot) || 0;
+
+        // Auto fallback calculation if any unit rate is 0 in dataset
+        if (sellKg <= 0 && sellPiece > 0 && weightPiece > 0) sellKg = sellPiece / weightPiece;
+        if (sellPiece <= 0 && sellKg > 0 && weightPiece > 0) sellPiece = sellKg * weightPiece;
+        if (sellFoot <= 0 && lengthFeet > 0 && sellPiece > 0) sellFoot = sellPiece / lengthFeet;
+
+        let defaultRate = 0;
+        let unitCost = 0;
+
         if (unit === 'piece') {
-            defaultRate = parseFloat(option.dataset.sellPiece) || (costKg * weightPiece * 1.2);
+            defaultRate = sellPiece;
             unitCost = costKg * weightPiece;
-            qtyHint.textContent = `Pieces (1 Piece = ${weightPiece} KG)`;
+            qtyHint.innerHTML = `<span class="text-primary fw-bold">1 Piece = ${weightPiece.toFixed(2)} KG</span> (${lengthFeet} Feet)`;
         } else if (unit === 'kg') {
-            defaultRate = parseFloat(option.dataset.sellKg) || costKg;
+            defaultRate = sellKg;
             unitCost = costKg;
             const pieceEq = weightPiece > 0 ? (1 / weightPiece).toFixed(2) : '0';
-            qtyHint.textContent = `KG (${pieceEq} Pieces/kg)`;
+            qtyHint.innerHTML = `<span class="text-primary fw-bold">1 Piece = ${weightPiece.toFixed(2)} KG</span> (~${pieceEq} Pcs/KG)`;
         } else if (unit === 'feet') {
-            defaultRate = parseFloat(option.dataset.sellFoot) || (costKg * weightFoot * 1.2);
+            defaultRate = sellFoot;
             unitCost = costKg * weightFoot;
-            qtyHint.textContent = `Feet (${lengthFeet} ft = 1 Piece)`;
+            qtyHint.innerHTML = `<span class="text-primary fw-bold">${lengthFeet} Feet = 1 Piece</span> (~${weightPiece.toFixed(2)} KG)`;
         }
 
-        rateInput.value = defaultRate.toFixed(2);
+        rateInput.value = defaultRate > 0 ? defaultRate.toFixed(2) : '0.00';
         checkProfitGuardAndConversion();
     }
 
     function checkProfitGuardAndConversion() {
         const option = productSelect.options[productSelect.selectedIndex];
-        if (!option || !option.value) return;
+        if (!option || !option.value) {
+            updateSelectedProductDetails();
+            return;
+        }
 
         const costKg = parseFloat(option.dataset.costKg) || 0;
         const weightPiece = parseFloat(option.dataset.weightPiece) || 0;
@@ -494,46 +565,118 @@ document.addEventListener('DOMContentLoaded', function () {
         const qty = parseFloat(qtyInput.value) || 0;
         const currentRate = parseFloat(rateInput.value) || 0;
 
+        let sellPiece = parseFloat(option.dataset.sellPiece) || 0;
+        let sellKg    = parseFloat(option.dataset.sellKg) || 0;
+        let sellFoot  = parseFloat(option.dataset.sellFoot) || 0;
+
+        if (sellKg <= 0 && sellPiece > 0 && weightPiece > 0) sellKg = sellPiece / weightPiece;
+        if (sellPiece <= 0 && sellKg > 0 && weightPiece > 0) sellPiece = sellKg * weightPiece;
+        if (sellFoot <= 0 && lengthFeet > 0 && sellPiece > 0) sellFoot = sellPiece / lengthFeet;
+
+        let minPiece = parseFloat(option.dataset.minPiece) || (sellPiece * 0.95);
+        let minKg    = parseFloat(option.dataset.minKg) || (weightPiece > 0 ? minPiece / weightPiece : sellKg * 0.95);
+        let minFoot  = parseFloat(option.dataset.minFoot) || (lengthFeet > 0 ? minPiece / lengthFeet : sellFoot * 0.95);
+
         let unitCost = 0;
         let equivPieces = 0;
         let equivWeight = 0;
+        let minRate = 0;
+        let standardRate = 0;
 
         if (unit === 'piece') {
             unitCost = costKg * weightPiece;
+            standardRate = sellPiece;
+            minRate = minPiece;
             equivPieces = qty;
             equivWeight = qty * weightPiece;
+            qtyHint.innerHTML = `<span class="text-primary fw-bold">1 Piece = ${weightPiece.toFixed(2)} KG</span> (${lengthFeet} Feet)`;
         } else if (unit === 'kg') {
             unitCost = costKg;
+            standardRate = sellKg;
+            minRate = minKg;
             equivPieces = weightPiece > 0 ? (qty / weightPiece) : 0;
             equivWeight = qty;
+            const pieceEq = weightPiece > 0 ? (1 / weightPiece).toFixed(2) : '0';
+            qtyHint.innerHTML = `<span class="text-primary fw-bold">1 Piece = ${weightPiece.toFixed(2)} KG</span> (~${pieceEq} Pcs/KG)`;
         } else if (unit === 'feet') {
             unitCost = costKg * weightFoot;
+            standardRate = sellFoot;
+            minRate = minFoot;
             equivPieces = lengthFeet > 0 ? (qty / lengthFeet) : 0;
             equivWeight = qty * weightFoot;
+            qtyHint.innerHTML = `<span class="text-primary fw-bold">${lengthFeet} Feet = 1 Piece</span> (~${weightPiece.toFixed(2)} KG)`;
         }
 
         const profit = currentRate - unitCost;
         const margin = unitCost > 0 ? ((profit / unitCost) * 100).toFixed(1) : 0;
 
         let guardHtml = '';
-        if (profit >= 0) {
+
+        // Check if entered rate is below minimum allowed bargain rate or zero
+        const isBelowMin = (currentRate <= 0) || (minRate > 0 && currentRate < minRate);
+
+        if (isBelowMin) {
+            // BLOCK / STOP: Rate is lower than minimum allowed limit!
+            btnAddToCart.disabled = true;
+            rateInput.classList.add('is-invalid');
+            rateInput.classList.remove('is-valid');
+
             guardHtml = `
-                <div class="text-success fw-semibold">
-                    <i class="fa-solid fa-circle-check me-1"></i> Profit: <strong>+Rs. ${profit.toFixed(2)}</strong> per unit (${margin}% margin).
+                <div class="text-danger fw-bold d-flex align-items-center">
+                    <i class="fa-solid fa-ban me-2 fs-4 text-danger"></i>
+                    <div>
+                        <div>RATE TOO LOW: Kam se kam rate limit <strong>Rs. ${minRate.toFixed(2)}</strong> hai!</div>
+                        <small class="text-danger fw-normal">You cannot sell below minimum allowed rate (Rs. ${minRate.toFixed(2)}).</small>
+                    </div>
                 </div>
             `;
         } else {
-            guardHtml = `
-                <div class="text-danger fw-bold">
-                    <i class="fa-solid fa-triangle-exclamation me-1"></i> WARNING: Selling BELOW cost! Loss: -Rs. ${Math.abs(profit).toFixed(2)}/unit.
-                </div>
-            `;
+            // ALLOW: Rate is at or above minimum allowed limit
+            btnAddToCart.disabled = false;
+            rateInput.classList.remove('is-invalid');
+            rateInput.classList.add('is-valid');
+
+            if (!isSuperAdmin) {
+                // Salesman view (No profit/cost)
+                guardHtml = `
+                    <div class="text-success fw-bold d-flex align-items-center">
+                        <i class="fa-solid fa-circle-check me-2 fs-5"></i>
+                        <div>
+                            <div>Standard Rate: Rs. ${standardRate.toFixed(2)} &bull; Minimum Allowed Limit: <strong>Rs. ${minRate.toFixed(2)}</strong></div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Super Admin view (Shows profit, margin, and min bargain limit)
+                if (profit >= 0) {
+                    guardHtml = `
+                        <div class="text-success fw-semibold d-flex align-items-center">
+                            <i class="fa-solid fa-circle-check me-2 fs-5"></i>
+                            <div>
+                                <div>Cost: Rs. ${unitCost.toFixed(2)} | Profit: <strong>+Rs. ${profit.toFixed(2)}</strong> (${margin}%) | Min Bargain: <strong>Rs. ${minRate.toFixed(2)}</strong></div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    guardHtml = `
+                        <div class="text-danger fw-bold d-flex align-items-center">
+                            <i class="fa-solid fa-triangle-exclamation me-2 fs-5"></i>
+                            <div>WARNING: Selling BELOW cost! Loss: -Rs. ${Math.abs(profit).toFixed(2)}/unit.</div>
+                        </div>
+                    `;
+                }
+            }
         }
 
-        // Add Piece Conversion Note in the guard
+        // Add Piece Specification & Conversion Suggestions in the guard
         guardHtml += `
-            <div class="badge bg-primary text-white px-2 py-1">
-                <i class="fa-solid fa-shapes me-1"></i> Equal to: ~${equivPieces.toFixed(2)} Pieces (${equivWeight.toFixed(2)} KG)
+            <div class="d-flex align-items-center gap-2 flex-wrap ms-auto">
+                <span class="badge bg-dark text-white px-2 py-1" title="Standard Piece Specs">
+                    <i class="fa-solid fa-ruler-combined text-warning me-1"></i> 1 Piece = ${lengthFeet} ft (${weightPiece.toFixed(2)} KG)
+                </span>
+                <span class="badge bg-primary text-white px-2 py-1" title="Converted Quantity">
+                    <i class="fa-solid fa-shapes me-1"></i> Equal to: ~${equivPieces.toFixed(2)} Pieces (${equivWeight.toFixed(2)} KG)
+                </span>
             </div>
         `;
 
@@ -543,7 +686,11 @@ document.addEventListener('DOMContentLoaded', function () {
     productSelect.addEventListener('change', updateSelectedProductDetails);
     unitSelect.addEventListener('change', updateSelectedProductDetails);
     qtyInput.addEventListener('input', checkProfitGuardAndConversion);
+    qtyInput.addEventListener('keyup', checkProfitGuardAndConversion);
+    qtyInput.addEventListener('change', checkProfitGuardAndConversion);
     rateInput.addEventListener('input', checkProfitGuardAndConversion);
+    rateInput.addEventListener('keyup', checkProfitGuardAndConversion);
+    rateInput.addEventListener('change', checkProfitGuardAndConversion);
 
     // Add Item to Cart
     btnAddToCart.addEventListener('click', function () {
@@ -555,18 +702,50 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const qty = parseFloat(qtyInput.value) || 0;
         const rate = parseFloat(rateInput.value) || 0;
+        const unit = unitSelect.value;
 
         if (qty <= 0) {
             alert('Please enter a valid quantity.');
+            qtyInput.focus();
+            return;
+        }
+
+        if (rate <= 0) {
+            alert('Please enter a valid unit rate.');
+            rateInput.focus();
+            return;
+        }
+
+        const weightPiece = parseFloat(option.dataset.weightPiece) || 0;
+        const lengthFeet = parseFloat(option.dataset.lengthFeet) || 20;
+
+        let sellPiece = parseFloat(option.dataset.sellPiece) || 0;
+        let sellKg    = parseFloat(option.dataset.sellKg) || 0;
+        let sellFoot  = parseFloat(option.dataset.sellFoot) || 0;
+
+        if (sellKg <= 0 && sellPiece > 0 && weightPiece > 0) sellKg = sellPiece / weightPiece;
+        if (sellPiece <= 0 && sellKg > 0 && weightPiece > 0) sellPiece = sellKg * weightPiece;
+        if (sellFoot <= 0 && lengthFeet > 0 && sellPiece > 0) sellFoot = sellPiece / lengthFeet;
+
+        let minPiece = parseFloat(option.dataset.minPiece) || (sellPiece * 0.95);
+        let minKg    = parseFloat(option.dataset.minKg) || (weightPiece > 0 ? minPiece / weightPiece : sellKg * 0.95);
+        let minFoot  = parseFloat(option.dataset.minFoot) || (lengthFeet > 0 ? minPiece / lengthFeet : sellFoot * 0.95);
+
+        // Strict Check: Block adding if rate is lower than minimum allowed bargain rate
+        let minRateCheck = 0;
+        if (unit === 'piece') minRateCheck = minPiece;
+        else if (unit === 'kg') minRateCheck = minKg;
+        else if (unit === 'feet') minRateCheck = minFoot;
+
+        if (minRateCheck > 0 && rate < minRateCheck) {
+            alert('RATE BLOCKED: Kam se kam allowed rate Rs. ' + minRateCheck.toFixed(2) + ' hai! Aap is se kam rate pe nahi bech sakte.');
+            rateInput.focus();
             return;
         }
 
         const pid = option.value;
         const pname = option.dataset.name;
-        const unit = unitSelect.value;
-        const weightPiece = parseFloat(option.dataset.weightPiece) || 0;
         const weightFoot = parseFloat(option.dataset.weightFoot) || 0;
-        const lengthFeet = parseFloat(option.dataset.lengthFeet) || 20;
 
         let deductedKg = 0;
         let equivPieces = 0;
@@ -716,6 +895,9 @@ document.addEventListener('DOMContentLoaded', function () {
         paidInput.dataset.autoFilled = "0";
         renderCart();
     });
+
+    // Run immediately on page load to sync suggestions and rates with selected product/unit
+    updateSelectedProductDetails();
 });
 </script>
 

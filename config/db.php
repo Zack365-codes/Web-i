@@ -126,7 +126,62 @@ try {
     ";
     $pdo->exec($createPaymentsTable);
 
-    // 7. Settings table (For Profit Password/PIN storage)
+    // 7. Purchases Table (Stock Inward from Mill/Factory)
+    $createPurchasesTable = "
+    CREATE TABLE IF NOT EXISTS `purchases` (
+        `id` INT AUTO_INCREMENT PRIMARY KEY,
+        `purchase_no` VARCHAR(50) NOT NULL UNIQUE,
+        `supplier_name` VARCHAR(150) NOT NULL,
+        `supplier_phone` VARCHAR(50) NULL,
+        `bilty_no` VARCHAR(100) NULL,
+        `total_weight_kg` DECIMAL(14,3) NOT NULL DEFAULT 0.000,
+        `subtotal` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+        `extra_cost` DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Carriage or labor charges',
+        `grand_total` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+        `paid_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+        `due_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+        `payment_status` ENUM('paid', 'partial', 'due') NOT NULL DEFAULT 'paid',
+        `payment_method` VARCHAR(50) NOT NULL DEFAULT 'Bank Transfer',
+        `notes` TEXT NULL,
+        `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ";
+    $pdo->exec($createPurchasesTable);
+
+    // 8. Purchase Items Table
+    $createPurchaseItemsTable = "
+    CREATE TABLE IF NOT EXISTS `purchase_items` (
+        `id` INT AUTO_INCREMENT PRIMARY KEY,
+        `purchase_id` INT NOT NULL,
+        `product_id` INT NOT NULL,
+        `product_name` VARCHAR(150) NOT NULL,
+        `purchase_unit` ENUM('ton', 'kg', 'piece') NOT NULL,
+        `quantity` DECIMAL(10,3) NOT NULL,
+        `rate_per_unit` DECIMAL(12,2) NOT NULL,
+        `subtotal` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
+        `added_stock_kg` DECIMAL(14,3) NOT NULL DEFAULT 0.000,
+        FOREIGN KEY (`purchase_id`) REFERENCES `purchases`(`id`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ";
+    $pdo->exec($createPurchaseItemsTable);
+
+    // 9. Supplier Payments Table (Factory Ko Adaigi)
+    $createSupplierPaymentsTable = "
+    CREATE TABLE IF NOT EXISTS `supplier_payments` (
+        `id` INT AUTO_INCREMENT PRIMARY KEY,
+        `voucher_no` VARCHAR(50) NOT NULL UNIQUE,
+        `supplier_name` VARCHAR(150) NOT NULL,
+        `supplier_phone` VARCHAR(50) NULL,
+        `purchase_id` INT NULL,
+        `amount_paid` DECIMAL(14,2) NOT NULL,
+        `payment_method` VARCHAR(50) NOT NULL DEFAULT 'Bank Transfer',
+        `notes` TEXT NULL,
+        `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ";
+    $pdo->exec($createSupplierPaymentsTable);
+
+    // 10. Settings table (For Profit Password/PIN storage)
     $createSettingsTable = "
     CREATE TABLE IF NOT EXISTS `settings` (
         `setting_key` VARCHAR(50) PRIMARY KEY,
@@ -140,6 +195,60 @@ try {
     if (!$pin_check) {
         $pdo->exec("INSERT INTO `settings` (`setting_key`, `setting_value`) VALUES ('profit_pin', '1234')");
     }
+
+    // 11. Users Table (Authentication & RBAC: Super Admin vs Salesman)
+    $createUsersTable = "
+    CREATE TABLE IF NOT EXISTS `users` (
+        `id` INT AUTO_INCREMENT PRIMARY KEY,
+        `username` VARCHAR(50) NOT NULL UNIQUE,
+        `fullname` VARCHAR(100) NOT NULL,
+        `password` VARCHAR(255) NOT NULL,
+        `role` ENUM('super_admin', 'salesman') NOT NULL DEFAULT 'salesman',
+        `phone` VARCHAR(30) NULL,
+        `status` ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+        `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ";
+    $pdo->exec($createUsersTable);
+
+    // Seed default Super Admin ('admin' / 'admin123') if users table is empty
+    $user_check = $pdo->query("SELECT COUNT(*) FROM `users`")->fetchColumn();
+    if ($user_check == 0) {
+        $default_admin_pwd = password_hash('admin123', PASSWORD_DEFAULT);
+        $default_sales_pwd = password_hash('123456', PASSWORD_DEFAULT);
+        
+        $pdo->prepare("INSERT INTO `users` (`username`, `fullname`, `password`, `role`, `phone`) VALUES (?, ?, ?, ?, ?)")
+            ->execute(['admin', 'Shop Owner (Super Admin)', $default_admin_pwd, 'super_admin', '0300-1111111']);
+            
+        $pdo->prepare("INSERT INTO `users` (`username`, `fullname`, `password`, `role`, `phone`) VALUES (?, ?, ?, ?, ?)")
+            ->execute(['salesman', 'Counter Salesman', $default_sales_pwd, 'salesman', '0300-2222222']);
+    }
+
+    // 12. Auto-migration for Minimum Selling Rates (Kam se kam rate limit / Floor price)
+    $cols_min_kg = $pdo->query("SHOW COLUMNS FROM `products` LIKE 'min_price_per_kg'")->fetchAll();
+    if (empty($cols_min_kg)) {
+        $pdo->exec("ALTER TABLE `products` ADD COLUMN `min_price_per_kg` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `sell_price_per_kg`");
+    }
+
+    $cols_min_ft = $pdo->query("SHOW COLUMNS FROM `products` LIKE 'min_price_per_foot'")->fetchAll();
+    if (empty($cols_min_ft)) {
+        $pdo->exec("ALTER TABLE `products` ADD COLUMN `min_price_per_foot` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `sell_price_per_foot`");
+    }
+
+    $cols_min_pc = $pdo->query("SHOW COLUMNS FROM `products` LIKE 'min_price_per_piece'")->fetchAll();
+    if (empty($cols_min_pc)) {
+        $pdo->exec("ALTER TABLE `products` ADD COLUMN `min_price_per_piece` DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER `sell_price_per_piece`");
+    }
+
+    // Set default min rates to cost_price + 5% or 95% of sell_price for any existing products where min_price is 0
+    $pdo->exec("
+        UPDATE `products` 
+        SET 
+            `min_price_per_kg` = IF(`min_price_per_kg` <= 0, GREATEST(`cost_price_per_kg`, ROUND(`sell_price_per_kg` * 0.95, 2)), `min_price_per_kg`),
+            `min_price_per_foot` = IF(`min_price_per_foot` <= 0, ROUND(`sell_price_per_foot` * 0.95, 2), `min_price_per_foot`),
+            `min_price_per_piece` = IF(`min_price_per_piece` <= 0, ROUND(`sell_price_per_piece` * 0.95, 2), `min_price_per_piece`)
+        WHERE `sell_price_per_kg` > 0 OR `sell_price_per_piece` > 0
+    ");
 
 } catch (PDOException $e) {
     $db_connection_error = $e->getMessage();

@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const btnApplyWeightPerFoot = document.getElementById('btn_apply_weight_foot');
 
     // Display preview elements
+    const previewCostKg = document.getElementById('preview_cost_kg');
     const previewProfitKg = document.getElementById('preview_profit_kg');
     const previewMarginKg = document.getElementById('preview_margin_kg');
     
@@ -112,6 +113,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const stockKg = parseFloat(stockKgInput?.value) || 0;
 
         // A. Profit per KG
+        if (previewCostKg) {
+            previewCostKg.textContent = 'Rs. ' + costKg.toFixed(2);
+        }
+
         if (costKg > 0 && sellKg > 0) {
             const profitKg = sellKg - costKg;
             const marginKg = ((profitKg / costKg) * 100).toFixed(1);

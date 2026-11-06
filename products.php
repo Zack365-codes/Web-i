@@ -89,8 +89,12 @@ if (isset($pdo)) {
                 <tr>
                     <th>Item Info</th>
                     <th>Piece & Unit Weight</th>
-                    <th>Purchase Cost</th>
-                    <th>Selling Rates & Profit</th>
+                    <?php if (is_super_admin()): ?>
+                        <th>Purchase Cost</th>
+                        <th>Selling Rates & Profit</th>
+                    <?php else: ?>
+                        <th>Selling Rates & Bargain Limits (Kam se Kam)</th>
+                    <?php endif; ?>
                     <th>Stock in Store (Pieces & KG)</th>
                     <th class="text-center">Action</th>
                 </tr>
@@ -168,47 +172,81 @@ if (isset($pdo)) {
                                 <?php endif; ?>
                             </td>
 
-                            <!-- 3. Purchase Cost (Protected) -->
-                            <td>
-                                <div>
-                                    <?= show_cost($cost_kg, '<span class="small text-muted">/ kg</span>') ?>
-                                </div>
-                                <?php if ($cost_piece > 0): ?>
-                                    <div class="small text-muted mt-1">
-                                        Piece Cost: <?= show_cost($cost_piece) ?>
-                                    </div>
-                                <?php endif; ?>
-                            </td>
-
-                            <!-- 4. Selling Rates & Profit (Protected) -->
-                            <td>
-                                <!-- Per Full Piece Rate -->
-                                <?php if ($sell_piece > 0): ?>
-                                    <div class="mb-1">
-                                        <span class="badge bg-primary text-white me-1">Piece:</span>
-                                        <span class="fw-bold text-dark"><?= format_currency($sell_piece) ?></span>
-                                        <span class="ms-1"><?= show_profit($profit_piece) ?></span>
-                                    </div>
-                                <?php endif; ?>
-
-                                <!-- Per KG Rate -->
-                                <?php if ($sell_kg > 0): ?>
-                                    <div class="mb-1">
-                                        <span class="badge bg-success-subtle text-success me-1">KG:</span>
-                                        <span class="fw-semibold text-dark"><?= format_currency($sell_kg) ?></span>
-                                        <span class="ms-1"><?= show_profit($profit_kg) ?></span>
-                                    </div>
-                                <?php endif; ?>
-
-                                <!-- Per Foot Rate -->
-                                <?php if ($sell_foot > 0): ?>
+                            <?php if (is_super_admin()): ?>
+                                <!-- 3. Purchase Cost (Super Admin Only) -->
+                                <td>
                                     <div>
-                                        <span class="badge bg-secondary-subtle text-secondary me-1">Foot:</span>
-                                        <span class="fw-semibold text-dark"><?= format_currency($sell_foot) ?></span>
-                                        <span class="ms-1"><?= show_profit($profit_foot) ?></span>
+                                        <?= show_cost($cost_kg, '<span class="small text-muted">/ kg</span>') ?>
                                     </div>
-                                <?php endif; ?>
-                            </td>
+                                    <?php if ($cost_piece > 0): ?>
+                                        <div class="small text-muted mt-1">
+                                            Piece Cost: <?= show_cost($cost_piece) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
+
+                                <!-- 4. Selling Rates & Profit (Super Admin) -->
+                                <td>
+                                    <!-- Per Full Piece Rate -->
+                                    <?php if ($sell_piece > 0): ?>
+                                        <div class="mb-1">
+                                            <span class="badge bg-primary text-white me-1">Piece:</span>
+                                            <span class="fw-bold text-dark"><?= format_currency($sell_piece) ?></span>
+                                            <span class="ms-1"><?= show_profit($profit_piece) ?></span>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <!-- Per KG Rate -->
+                                    <?php if ($sell_kg > 0): ?>
+                                        <div class="mb-1">
+                                            <span class="badge bg-success-subtle text-success me-1">KG:</span>
+                                            <span class="fw-semibold text-dark"><?= format_currency($sell_kg) ?></span>
+                                            <span class="ms-1"><?= show_profit($profit_kg) ?></span>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <!-- Per Foot Rate -->
+                                    <?php if ($sell_foot > 0): ?>
+                                        <div>
+                                            <span class="badge bg-secondary-subtle text-secondary me-1">Foot:</span>
+                                            <span class="fw-semibold text-dark"><?= format_currency($sell_foot) ?></span>
+                                            <span class="ms-1"><?= show_profit($profit_foot) ?></span>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
+                            <?php else: ?>
+                                <!-- Salesman View: Only Selling Rates & Minimum Bargain Limits (No Profit/Cost) -->
+                                <td>
+                                    <?php 
+                                        $min_piece = (float)($p['min_price_per_piece'] ?: $sell_piece * 0.95);
+                                        $min_kg = (float)($p['min_price_per_kg'] ?: $sell_kg * 0.95);
+                                        $min_foot = (float)($p['min_price_per_foot'] ?: $sell_foot * 0.95);
+                                    ?>
+                                    <?php if ($sell_piece > 0): ?>
+                                        <div class="mb-2">
+                                            <span class="badge bg-primary text-white me-1">Piece:</span>
+                                            <span class="fw-bold text-dark fs-6"><?= format_currency($sell_piece) ?></span>
+                                            <span class="badge bg-warning text-dark border ms-1 font-monospace">Min: <?= format_currency($min_piece) ?></span>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if ($sell_kg > 0): ?>
+                                        <div class="mb-2">
+                                            <span class="badge bg-success-subtle text-success me-1">KG:</span>
+                                            <span class="fw-bold text-dark"><?= format_currency($sell_kg) ?></span>
+                                            <span class="badge bg-warning text-dark border ms-1 font-monospace">Min: <?= format_currency($min_kg) ?></span>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if ($sell_foot > 0): ?>
+                                        <div>
+                                            <span class="badge bg-secondary-subtle text-secondary me-1">Foot:</span>
+                                            <span class="fw-bold text-dark"><?= format_currency($sell_foot) ?></span>
+                                            <span class="badge bg-warning text-dark border ms-1 font-monospace">Min: <?= format_currency($min_foot) ?></span>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
+                            <?php endif; ?>
 
                             <!-- 5. Stock in Pieces & KG -->
                             <td>

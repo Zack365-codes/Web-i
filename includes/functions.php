@@ -6,6 +6,41 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 /**
+ * Authentication & Role-Based Access Control (RBAC)
+ */
+function is_logged_in() {
+    return !empty($_SESSION['user']['id']);
+}
+
+function current_user() {
+    return $_SESSION['user'] ?? null;
+}
+
+function is_super_admin() {
+    return is_logged_in() && (($_SESSION['user']['role'] ?? '') === 'super_admin');
+}
+
+function is_salesman() {
+    return is_logged_in() && (($_SESSION['user']['role'] ?? '') === 'salesman');
+}
+
+function require_login() {
+    if (!is_logged_in()) {
+        header("Location: login.php");
+        exit;
+    }
+}
+
+function require_super_admin() {
+    require_login();
+    if (!is_super_admin()) {
+        set_flash('danger', 'Access Denied: Only Super Admin has access to Profit Reports and Financial Analytics.');
+        header("Location: index.php");
+        exit;
+    }
+}
+
+/**
  * Handle Lock / Unlock profit actions via URL query or POST
  */
 if (isset($_GET['lock_profit'])) {
@@ -20,6 +55,10 @@ if (isset($_GET['lock_profit'])) {
  * Check if profit view is unlocked
  */
 function is_profit_unlocked() {
+    // Only Super Admin can unlock or view profit
+    if (!is_super_admin()) {
+        return false;
+    }
     return !empty($_SESSION['profit_unlocked']);
 }
 
@@ -27,6 +66,9 @@ function is_profit_unlocked() {
  * Display profit with privacy shield / password lock
  */
 function show_profit($amount, $show_sign = true, $decimals = 2) {
+    if (!is_super_admin()) {
+        return '<span class="badge bg-secondary-subtle text-muted border" title="Restricted to Super Admin"><i class="fa-solid fa-lock me-1 text-secondary"></i>Restricted</span>';
+    }
     if (!is_profit_unlocked()) {
         return '<span class="badge bg-light text-muted border profit-shield-badge" role="button" data-bs-toggle="modal" data-bs-target="#profitPinModal" title="Profit is locked. Click to enter PIN and view."><i class="fa-solid fa-lock text-warning me-1"></i>••••••</span>';
     }
@@ -40,6 +82,9 @@ function show_profit($amount, $show_sign = true, $decimals = 2) {
  * Display margin percentage with privacy shield
  */
 function show_margin($margin_percent) {
+    if (!is_super_admin()) {
+        return '<span class="badge bg-secondary-subtle text-muted border"><i class="fa-solid fa-lock me-1"></i>••%</span>';
+    }
     if (!is_profit_unlocked()) {
         return '<span class="badge bg-light text-muted border profit-shield-badge" role="button" data-bs-toggle="modal" data-bs-target="#profitPinModal"><i class="fa-solid fa-lock text-warning me-1"></i>••%</span>';
     }
@@ -52,6 +97,9 @@ function show_margin($margin_percent) {
  * Display purchase cost with privacy shield
  */
 function show_cost($amount, $suffix = '') {
+    if (!is_super_admin()) {
+        return '<span class="text-muted"><i class="fa-solid fa-lock me-1"></i>Restricted</span>';
+    }
     if (!is_profit_unlocked()) {
         return '<span class="text-muted profit-shield-badge" role="button" data-bs-toggle="modal" data-bs-target="#profitPinModal" title="Cost is locked. Click to enter PIN."><i class="fa-solid fa-lock text-warning me-1"></i>••••••</span>';
     }

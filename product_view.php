@@ -142,8 +142,13 @@ try {
 
         <!-- Pricing & Profit Analysis (Per Unit Comparison) -->
         <div class="card card-custom mb-4">
-            <div class="card-header card-header-clean fw-bold">
-                <i class="fa-solid fa-calculator text-success me-2"></i>Unit Pricing & Profit Margins
+            <div class="card-header card-header-clean fw-bold d-flex justify-content-between align-items-center">
+                <span>
+                    <i class="fa-solid fa-calculator text-success me-2"></i><?= is_super_admin() ? 'Unit Pricing & Profit Margins' : 'Selling Rates & Minimum Bargain Limits' ?>
+                </span>
+                <?php if (!is_super_admin()): ?>
+                    <span class="badge bg-warning text-dark"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Kam se Kam Rate Limit</span>
+                <?php endif; ?>
             </div>
             <div class="card-body p-4">
                 <div class="table-responsive">
@@ -151,30 +156,53 @@ try {
                         <thead class="table-light">
                             <tr>
                                 <th>Selling Unit</th>
-                                <th>Purchase Cost</th>
-                                <th>Selling Price</th>
-                                <th>Profit Amount</th>
-                                <th>Margin (%)</th>
+                                <?php if (is_super_admin()): ?>
+                                    <th>Purchase Cost</th>
+                                    <th>Selling Price</th>
+                                    <th>Profit Amount</th>
+                                    <th>Margin (%)</th>
+                                <?php else: ?>
+                                    <th>Regular Selling Price</th>
+                                    <th>Minimum Allowed Bargain Rate (Kam se Kam)</th>
+                                <?php endif; ?>
                             </tr>
                         </thead>
                         <tbody>
                             <!-- Per KG -->
                             <tr>
                                 <td class="fw-bold text-start"><i class="fa-solid fa-weight-hanging text-secondary me-2"></i>Per 1 KG</td>
-                                <td><?= show_cost($cost_kg) ?></td>
-                                <td class="text-dark fw-bold"><?= format_currency($sell_kg) ?></td>
-                                <td><?= show_profit($profit_kg) ?></td>
-                                <td><?= show_margin($margin_kg) ?></td>
+                                <?php if (is_super_admin()): ?>
+                                    <td><?= show_cost($cost_kg) ?></td>
+                                    <td class="text-dark fw-bold"><?= format_currency($sell_kg) ?></td>
+                                    <td><?= show_profit($profit_kg) ?></td>
+                                    <td><?= show_margin($margin_kg) ?></td>
+                                <?php else: ?>
+                                    <td class="text-success fw-bold fs-6"><?= format_currency($sell_kg) ?></td>
+                                    <td>
+                                        <span class="badge bg-warning text-dark border fs-6 font-monospace">
+                                            <?= format_currency($product['min_price_per_kg'] ?: $sell_kg * 0.95) ?>
+                                        </span>
+                                    </td>
+                                <?php endif; ?>
                             </tr>
 
                             <!-- Per Piece -->
                             <?php if ($sell_piece > 0 || $weight_piece > 0): ?>
                                 <tr>
                                     <td class="fw-bold text-start"><i class="fa-solid fa-shapes text-primary me-2"></i>Per 1 Piece</td>
-                                    <td><?= show_cost($cost_piece) ?></td>
-                                    <td class="text-dark fw-bold"><?= format_currency($sell_piece) ?></td>
-                                    <td><?= show_profit($profit_piece) ?></td>
-                                    <td><?= show_margin($margin_piece) ?></td>
+                                    <?php if (is_super_admin()): ?>
+                                        <td><?= show_cost($cost_piece) ?></td>
+                                        <td class="text-dark fw-bold"><?= format_currency($sell_piece) ?></td>
+                                        <td><?= show_profit($profit_piece) ?></td>
+                                        <td><?= show_margin($margin_piece) ?></td>
+                                    <?php else: ?>
+                                        <td class="text-primary fw-bold fs-6"><?= format_currency($sell_piece) ?></td>
+                                        <td>
+                                            <span class="badge bg-warning text-dark border fs-6 font-monospace">
+                                                <?= format_currency($product['min_price_per_piece'] ?: $sell_piece * 0.95) ?>
+                                            </span>
+                                        </td>
+                                    <?php endif; ?>
                                 </tr>
                             <?php endif; ?>
 
@@ -182,10 +210,19 @@ try {
                             <?php if ($sell_foot > 0 || $weight_foot > 0): ?>
                                 <tr>
                                     <td class="fw-bold text-start"><i class="fa-solid fa-ruler text-info me-2"></i>Per 1 Foot</td>
-                                    <td><?= show_cost($cost_foot) ?></td>
-                                    <td class="text-dark fw-bold"><?= format_currency($sell_foot) ?></td>
-                                    <td><?= show_profit($profit_foot) ?></td>
-                                    <td><?= show_margin($margin_foot) ?></td>
+                                    <?php if (is_super_admin()): ?>
+                                        <td><?= show_cost($cost_foot) ?></td>
+                                        <td class="text-dark fw-bold"><?= format_currency($sell_foot) ?></td>
+                                        <td><?= show_profit($profit_foot) ?></td>
+                                        <td><?= show_margin($margin_foot) ?></td>
+                                    <?php else: ?>
+                                        <td class="text-dark fw-bold fs-6"><?= format_currency($sell_foot) ?></td>
+                                        <td>
+                                            <span class="badge bg-warning text-dark border fs-6 font-monospace">
+                                                <?= format_currency($product['min_price_per_foot'] ?: $sell_foot * 0.95) ?>
+                                            </span>
+                                        </td>
+                                    <?php endif; ?>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -210,13 +247,15 @@ try {
                             <th>Sold Qty</th>
                             <th>Rate</th>
                             <th>Subtotal</th>
-                            <th>Profit</th>
+                            <?php if (is_super_admin()): ?>
+                                <th>Profit</th>
+                            <?php endif; ?>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($sales_history)): ?>
                             <tr>
-                                <td colspan="7" class="text-center py-4 text-muted">
+                                <td colspan="<?= is_super_admin() ? 7 : 6 ?>" class="text-center py-4 text-muted">
                                     No sales recorded for this product yet.
                                 </td>
                             </tr>
@@ -236,7 +275,9 @@ try {
                                     </td>
                                     <td><?= format_currency($sh['unit_price']) ?></td>
                                     <td class="fw-bold"><?= format_currency($sh['subtotal']) ?></td>
-                                    <td class="fw-bold text-success">+<?= format_currency($sh['item_profit']) ?></td>
+                                    <?php if (is_super_admin()): ?>
+                                        <td class="fw-bold text-success">+<?= format_currency($sh['item_profit']) ?></td>
+                                    <?php endif; ?>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -285,22 +326,24 @@ try {
                         </div>
                     </div>
 
-                    <!-- Financial Valuation -->
-                    <div class="p-3 bg-light rounded-3 border mb-3">
-                        <div class="d-flex justify-content-between small text-muted mb-1">
-                            <span>Purchase Cost Value:</span>
-                            <span><?= show_cost($total_cost_val) ?></span>
+                    <?php if (is_super_admin()): ?>
+                        <!-- Financial Valuation (Super Admin Only) -->
+                        <div class="p-3 bg-light rounded-3 border mb-3">
+                            <div class="d-flex justify-content-between small text-muted mb-1">
+                                <span>Purchase Cost Value:</span>
+                                <span><?= show_cost($total_cost_val) ?></span>
+                            </div>
+                            <div class="d-flex justify-content-between small text-muted mb-1">
+                                <span>Potential Retail Value:</span>
+                                <span class="fw-bold text-dark"><?= format_currency($total_retail_val) ?></span>
+                            </div>
+                            <hr class="my-2">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-bold text-success">Expected Total Profit:</span>
+                                <span><?= show_profit($total_expected_profit, false) ?></span>
+                            </div>
                         </div>
-                        <div class="d-flex justify-content-between small text-muted mb-1">
-                            <span>Potential Retail Value:</span>
-                            <span class="fw-bold text-dark"><?= format_currency($total_retail_val) ?></span>
-                        </div>
-                        <hr class="my-2">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="fw-bold text-success">Expected Total Profit:</span>
-                            <span><?= show_profit($total_expected_profit, false) ?></span>
-                        </div>
-                    </div>
+                    <?php endif; ?>
 
                     <!-- Alert Limit info -->
                     <div class="small text-muted d-flex justify-content-between">

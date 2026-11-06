@@ -1,7 +1,10 @@
 <?php
-// profit_report.php - Financial Profit & Margin Analytics (Password Protected)
+// profit_report.php - Financial Profit & Margin Analytics (Password Protected - Super Admin Only)
 $page_title = "Profit Report & Financial Analytics";
 require_once __DIR__ . '/includes/header.php';
+
+// Strictly restrict access to Super Admin only
+require_super_admin();
 
 // Check if profit is unlocked
 $unlocked = is_profit_unlocked();

@@ -18,9 +18,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
         $sell_price_per_kg   = floatval($_POST['sell_price_per_kg'] ?? 0);
         $sell_price_per_foot = floatval($_POST['sell_price_per_foot'] ?? 0);
         $sell_price_per_piece= floatval($_POST['sell_price_per_piece'] ?? 0);
+        $min_price_per_kg    = floatval($_POST['min_price_per_kg'] ?? 0);
+        $min_price_per_piece = floatval($_POST['min_price_per_piece'] ?? 0);
+        $min_price_per_foot  = floatval($_POST['min_price_per_foot'] ?? 0);
         $total_stock_kg      = floatval($_POST['total_stock_kg'] ?? 0);
         $alert_quantity_kg   = floatval($_POST['alert_quantity_kg'] ?? 50);
         $description         = trim($_POST['description'] ?? '');
+
+        // Auto default min rates if left empty
+        if ($min_price_per_kg <= 0 && $sell_price_per_kg > 0) {
+            $min_price_per_kg = max($cost_price_per_kg, round($sell_price_per_kg * 0.95, 2));
+        }
+        if ($min_price_per_piece <= 0 && $sell_price_per_piece > 0) {
+            $min_price_per_piece = round($sell_price_per_piece * 0.95, 2);
+        }
+        if ($min_price_per_foot <= 0 && $sell_price_per_foot > 0) {
+            $min_price_per_foot = round($sell_price_per_foot * 0.95, 2);
+        }
 
         // Auto calculate piece weight or foot weight if one is missing
         if ($weight_per_piece <= 0 && $weight_per_foot > 0 && $standard_length > 0) {
@@ -48,15 +62,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                     INSERT INTO products (
                         product_code, product_name, category, 
                         standard_length_feet, weight_per_foot, weight_per_piece,
-                        cost_price_per_kg, sell_price_per_kg, sell_price_per_foot, sell_price_per_piece,
+                        cost_price_per_kg, sell_price_per_kg, min_price_per_kg,
+                        sell_price_per_foot, min_price_per_foot,
+                        sell_price_per_piece, min_price_per_piece,
                         total_stock_kg, alert_quantity_kg, description
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
 
                 $stmt->execute([
                     $product_code, $product_name, $category,
                     $standard_length, $weight_per_foot, $weight_per_piece,
-                    $cost_price_per_kg, $sell_price_per_kg, $sell_price_per_foot, $sell_price_per_piece,
+                    $cost_price_per_kg, $sell_price_per_kg, $min_price_per_kg,
+                    $sell_price_per_foot, $min_price_per_foot,
+                    $sell_price_per_piece, $min_price_per_piece,
                     $total_stock_kg, $alert_quantity_kg, $description
                 ]);
 
@@ -230,48 +248,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                 </div>
             </div>
 
-            <!-- Section 3: Pricing & Rates -->
+            <!-- Section 3: Pricing & Rates (With Minimum Allowed Bargain Limits) -->
             <div class="card card-custom mb-4">
-                <div class="card-header card-header-clean d-flex align-items-center">
-                    <span class="badge bg-primary me-2">3</span>
-                    <span>Purchase Cost & Selling Rates</span>
+                <div class="card-header card-header-clean d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center">
+                        <span class="badge bg-primary me-2">3</span>
+                        <span>Purchase Cost, Selling Rates & Bargain Limits</span>
+                    </div>
+                    <span class="badge bg-warning text-dark"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Kam se Kam Rate Limit</span>
                 </div>
                 <div class="card-body p-4">
                     <div class="row g-3">
-                        <!-- Purchase Cost per KG -->
-                        <div class="col-md-6">
-                            <label for="cost_price_per_kg" class="form-label fw-semibold text-danger">
-                                <i class="fa-solid fa-cart-shopping me-1"></i> Purchase Cost (Cost / KG) <span class="text-danger">*</span>
-                            </label>
-                            <div class="input-group">
-                                <span class="input-group-text">Rs.</span>
-                                <input type="number" step="0.5" class="form-control form-control-lg fw-bold" 
-                                       id="cost_price_per_kg" name="cost_price_per_kg" placeholder="220.00" required
-                                       value="<?= htmlspecialchars($_POST['cost_price_per_kg'] ?? '') ?>">
-                                <span class="input-group-text">/ KG</span>
-                            </div>
-                            <div class="form-text">Base raw iron cost per KG paid to supplier.</div>
+                        
+                        <!-- Purchase Cost per KG (Restricted to Super Admin) -->
+                        <div class="col-md-12">
+                            <?php if (is_super_admin()): ?>
+                                <label for="cost_price_per_kg" class="form-label fw-semibold text-danger">
+                                    <i class="fa-solid fa-cart-shopping me-1"></i> Purchase Cost (Cost / KG) <span class="text-danger">* (Owner Only)</span>
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-danger-subtle text-danger fw-bold">Cost Rs.</span>
+                                    <input type="number" step="0.5" class="form-control form-control-lg fw-bold text-danger" 
+                                           id="cost_price_per_kg" name="cost_price_per_kg" placeholder="220.00" required
+                                           value="<?= htmlspecialchars($_POST['cost_price_per_kg'] ?? '') ?>">
+                                    <span class="input-group-text">/ KG</span>
+                                </div>
+                                <div class="form-text">Base raw iron cost paid to mill/factory. Hidden from staff.</div>
+                            <?php else: ?>
+                                <input type="hidden" name="cost_price_per_kg" value="0">
+                                <div class="alert alert-secondary py-2 small mb-0">
+                                    <i class="fa-solid fa-lock me-1 text-warning"></i> Purchase Cost Price is managed by Super Admin.
+                                </div>
+                            <?php endif; ?>
                         </div>
 
-                        <!-- Sale Price Per KG -->
-                        <div class="col-md-6">
-                            <label for="sell_price_per_kg" class="form-label fw-semibold text-success">
-                                <i class="fa-solid fa-tag me-1"></i> Selling Rate (Sale / KG)
-                            </label>
-                            <div class="input-group">
-                                <span class="input-group-text">Rs.</span>
-                                <input type="number" step="0.5" class="form-control form-control-lg fw-bold text-success" 
-                                       id="sell_price_per_kg" name="sell_price_per_kg" placeholder="260.00"
-                                       value="<?= htmlspecialchars($_POST['sell_price_per_kg'] ?? '') ?>">
-                                <span class="input-group-text">/ KG</span>
-                            </div>
-                            <div class="form-text">When customer buys by weight (Kanta wazan).</div>
-                        </div>
-
-                        <!-- Sale Price Per Piece -->
+                        <!-- 1. Per Piece Rates (Selling & Min Bargain Limit) -->
                         <div class="col-md-6">
                             <label for="sell_price_per_piece" class="form-label fw-semibold text-primary">
-                                <i class="fa-solid fa-shapes me-1"></i> Selling Rate (Per Piece)
+                                <i class="fa-solid fa-shapes me-1"></i> Full Piece Selling Rate
                             </label>
                             <div class="input-group">
                                 <span class="input-group-text">Rs.</span>
@@ -280,13 +294,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                                        value="<?= htmlspecialchars($_POST['sell_price_per_piece'] ?? '') ?>">
                                 <span class="input-group-text">/ Piece</span>
                             </div>
-                            <div class="form-text">Price when customer buys a full piece/pipe/bar.</div>
+                            <div class="form-text">Standard sale rate for 1 full piece/pipe/gate.</div>
                         </div>
 
-                        <!-- Sale Price Per Foot -->
+                        <div class="col-md-6">
+                            <label for="min_price_per_piece" class="form-label fw-semibold text-danger">
+                                <i class="fa-solid fa-shield-halved me-1"></i> Min Piece Rate (Kam se kam limit)
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-warning-subtle text-dark fw-bold">Min Rs.</span>
+                                <input type="number" step="1" class="form-control form-control-lg fw-bold text-dark border-warning" 
+                                       id="min_price_per_piece" name="min_price_per_piece" placeholder="e.g. 1650.00"
+                                       value="<?= htmlspecialchars($_POST['min_price_per_piece'] ?? '') ?>">
+                                <span class="input-group-text">/ Piece</span>
+                            </div>
+                            <div class="form-text">Salesmen cannot sell below this minimum bargain rate.</div>
+                        </div>
+
+                        <!-- 2. Per KG Rates (Selling & Min Bargain Limit) -->
+                        <div class="col-md-6">
+                            <label for="sell_price_per_kg" class="form-label fw-semibold text-success">
+                                <i class="fa-solid fa-weight-hanging me-1"></i> Weight Rate (Sale / KG)
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text">Rs.</span>
+                                <input type="number" step="0.5" class="form-control form-control-lg fw-bold text-success" 
+                                       id="sell_price_per_kg" name="sell_price_per_kg" placeholder="260.00"
+                                       value="<?= htmlspecialchars($_POST['sell_price_per_kg'] ?? '') ?>">
+                                <span class="input-group-text">/ KG</span>
+                            </div>
+                            <div class="form-text">When customer buys by weight (Kanta).</div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="min_price_per_kg" class="form-label fw-semibold text-danger">
+                                <i class="fa-solid fa-shield-halved me-1"></i> Min KG Rate (Kam se kam limit)
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-warning-subtle text-dark fw-bold">Min Rs.</span>
+                                <input type="number" step="0.5" class="form-control form-control-lg fw-bold text-dark border-warning" 
+                                       id="min_price_per_kg" name="min_price_per_kg" placeholder="245.00"
+                                       value="<?= htmlspecialchars($_POST['min_price_per_kg'] ?? '') ?>">
+                                <span class="input-group-text">/ KG</span>
+                            </div>
+                            <div class="form-text">Minimum allowed bargain rate per KG.</div>
+                        </div>
+
+                        <!-- 3. Per Foot Rates (Selling & Min Bargain Limit) -->
                         <div class="col-md-6">
                             <label for="sell_price_per_foot" class="form-label fw-semibold text-secondary">
-                                <i class="fa-solid fa-ruler me-1"></i> Selling Rate (Sale / Foot)
+                                <i class="fa-solid fa-ruler me-1"></i> Running Foot Rate (Sale / Foot)
                             </label>
                             <div class="input-group">
                                 <span class="input-group-text">Rs.</span>
@@ -297,6 +354,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                             </div>
                             <div class="form-text">When cut or sold per running foot.</div>
                         </div>
+
+                        <div class="col-md-6">
+                            <label for="min_price_per_foot" class="form-label fw-semibold text-danger">
+                                <i class="fa-solid fa-shield-halved me-1"></i> Min Foot Rate (Kam se kam limit)
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-warning-subtle text-dark fw-bold">Min Rs.</span>
+                                <input type="number" step="0.5" class="form-control form-control-lg fw-bold text-dark border-warning" 
+                                       id="min_price_per_foot" name="min_price_per_foot" placeholder="80.00"
+                                       value="<?= htmlspecialchars($_POST['min_price_per_foot'] ?? '') ?>">
+                                <span class="input-group-text">/ Foot</span>
+                            </div>
+                            <div class="form-text">Minimum allowed bargain rate per foot.</div>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -391,8 +463,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_product'])) {
                             <span class="fw-semibold text-secondary small"><i class="fa-solid fa-weight-hanging me-1"></i> Profit Per 1 KG:</span>
                             <span id="preview_margin_kg" class="badge bg-secondary">0% Margin</span>
                         </div>
-                        <div class="fs-4 fw-bold text-success" id="preview_profit_kg">Rs. 0.00</div>
-                        <div class="text-muted small">Selling Price / KG - Purchase Cost / KG</div>
+                        <div class="d-flex justify-content-between align-items-baseline">
+                            <div class="fs-4 fw-bold text-success" id="preview_profit_kg">Rs. 0.00</div>
+                            <div class="small text-muted">Cost: <span id="preview_cost_kg" class="fw-semibold">Rs. 0.00</span></div>
+                        </div>
+                        <div class="text-muted small mt-1">Selling Price / KG - Purchase Cost / KG</div>
                     </div>
 
                     <!-- 3. Feet Profit Box -->

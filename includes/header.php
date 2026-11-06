@@ -3,9 +3,12 @@
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/functions.php';
 
-// Handle PIN verification
+// Enforce Login Authentication on all system pages
+require_login();
+
+// Handle PIN verification (Super Admin Only)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['verify_profit_pin'])) {
-    if (isset($pdo)) {
+    if (is_super_admin() && isset($pdo)) {
         $entered_pin = trim($_POST['profit_pin'] ?? '');
         $pin_row = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'profit_pin'")->fetch();
         $real_pin = $pin_row ? $pin_row['setting_value'] : '1234';
@@ -22,9 +25,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['verify_profit_pin']))
     }
 }
 
-// Handle PIN Change
+// Handle PIN Change (Super Admin Only)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_profit_pin'])) {
-    if (isset($pdo)) {
+    if (is_super_admin() && isset($pdo)) {
         $current_pin = trim($_POST['current_pin'] ?? '');
         $new_pin = trim($_POST['new_pin'] ?? '');
         $pin_row = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'profit_pin'")->fetch();
@@ -45,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_profit_pin']))
 
 // Determine active page for nav highlighting
 $current_page = basename($_SERVER['PHP_SELF']);
+$user = current_user();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -60,7 +64,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="stylesheet" href="assets/css/style.css?v=<?= time() ?>">
     <style>
         .profit-shield-badge {
             cursor: pointer;
@@ -77,12 +81,12 @@ $current_page = basename($_SERVER['PHP_SELF']);
 <body>
 
     <!-- Main Navigation Bar -->
-    <nav class="navbar navbar-expand-lg navbar-dark main-navbar sticky-top">
-        <div class="container-fluid px-lg-4">
-            <a class="navbar-brand d-flex align-items-center" href="index.php">
-                <i class="fa-solid fa-cubes-stacked me-2 text-warning fs-4"></i>
+    <nav class="navbar navbar-expand-xl navbar-dark main-navbar sticky-top py-2">
+        <div class="container-fluid px-lg-3">
+            <a class="navbar-brand d-flex align-items-center me-3" href="index.php">
+                <i class="fa-solid fa-cubes-stacked me-2 text-warning fs-5"></i>
                 <span>IRON STORE POS</span>
-                <span class="brand-badge">INVENTORY & BILLING</span>
+                <span class="brand-badge d-none d-md-inline">INVENTORY</span>
             </a>
             
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -90,7 +94,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </button>
             
             <div class="collapse navbar-collapse" id="mainNavbar">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-4">
+                <ul class="navbar-nav me-auto mb-2 mb-xl-0 d-flex flex-wrap align-items-center gap-1">
                     <li class="nav-item">
                         <a class="nav-link <?= $current_page === 'index.php' ? 'active' : '' ?>" href="index.php">
                             <i class="fa-solid fa-chart-pie me-1"></i> Dashboard
@@ -111,33 +115,62 @@ $current_page = basename($_SERVER['PHP_SELF']);
                             <i class="fa-solid fa-book-bookmark me-1 text-info"></i> Customer Khata
                         </a>
                     </li>
+
+                    <?php if (is_super_admin()): ?>
+                        <li class="nav-item">
+                            <a class="nav-link <?= in_array($current_page, ['purchases.php', 'purchase_add.php']) ? 'active' : '' ?>" href="purchases.php">
+                                <i class="fa-solid fa-truck-ramp-box me-1 text-primary"></i> Purchases
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link <?= in_array($current_page, ['suppliers_khata.php', 'supplier_ledger.php']) ? 'active' : '' ?>" href="suppliers_khata.php">
+                                <i class="fa-solid fa-building-columns me-1 text-warning"></i> Supplier Khata
+                            </a>
+                        </li>
+                    <?php endif; ?>
+
                     <li class="nav-item">
                         <a class="nav-link <?= $current_page === 'products.php' ? 'active' : '' ?>" href="products.php">
                             <i class="fa-solid fa-boxes-stacked me-1"></i> Products
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link <?= $current_page === 'profit_report.php' ? 'active' : '' ?>" href="profit_report.php">
-                            <i class="fa-solid fa-chart-line me-1 text-success"></i> Profit Report
-                        </a>
-                    </li>
+
+                    <!-- Profit Report TAB: ONLY VISIBLE TO SUPER ADMIN -->
+                    <?php if (is_super_admin()): ?>
+                        <li class="nav-item">
+                            <a class="nav-link <?= $current_page === 'profit_report.php' ? 'active' : '' ?>" href="profit_report.php">
+                                <i class="fa-solid fa-chart-line me-1 text-success"></i> Profit Report
+                            </a>
+                        </li>
+                    <?php endif; ?>
                 </ul>
 
-                <div class="d-flex align-items-center gap-2">
-                    <!-- Profit Privacy Lock Button -->
-                    <?php if (is_profit_unlocked()): ?>
-                        <a href="?lock_profit=1" class="btn btn-outline-success btn-sm fw-bold px-2" title="Profit is visible. Click to hide profit immediately!">
-                            <i class="fa-solid fa-lock-open me-1"></i> Profit Visible (Lock)
-                        </a>
-                    <?php else: ?>
-                        <button type="button" class="btn btn-warning btn-sm fw-bold px-2 text-dark shadow-sm" data-bs-toggle="modal" data-bs-target="#profitPinModal" title="Click to enter PIN and view profit">
-                            <i class="fa-solid fa-lock me-1"></i> Profit Protected (PIN)
-                        </button>
+                <div class="d-flex align-items-center gap-2 flex-nowrap ms-auto mt-2 mt-xl-0">
+                    <!-- Profit Privacy Lock Button (Super Admin Only) -->
+                    <?php if (is_super_admin()): ?>
+                        <?php if (is_profit_unlocked()): ?>
+                            <a href="?lock_profit=1" class="btn btn-outline-success btn-sm fw-bold px-2 py-1 text-nowrap" title="Profit is visible. Click to hide profit immediately!">
+                                <i class="fa-solid fa-lock-open me-1"></i> Profit Visible
+                            </a>
+                        <?php else: ?>
+                            <button type="button" class="btn btn-outline-warning btn-sm fw-bold px-2 py-1 text-nowrap" data-bs-toggle="modal" data-bs-target="#profitPinModal" title="Click to enter PIN and view profit">
+                                <i class="fa-solid fa-lock me-1"></i> Profit PIN
+                            </button>
+                        <?php endif; ?>
                     <?php endif; ?>
 
-                    <a href="pos.php" class="btn btn-warning btn-sm fw-bold px-3 shadow-sm">
-                        <i class="fa-solid fa-cart-shopping me-1"></i> New Bill
-                    </a>
+                    <!-- User Profile & Role Badge -->
+                    <div class="d-flex align-items-center bg-dark bg-opacity-50 px-2 py-1 rounded border border-secondary border-opacity-50 text-white small text-nowrap">
+                        <?php if (is_super_admin()): ?>
+                            <span class="badge bg-primary me-2"><i class="fa-solid fa-user-shield me-1"></i>Admin</span>
+                        <?php else: ?>
+                            <span class="badge bg-secondary me-2"><i class="fa-solid fa-user me-1"></i>Salesman</span>
+                        <?php endif; ?>
+                        <span class="fw-semibold me-2"><?= htmlspecialchars($user['fullname'] ?? 'User') ?></span>
+                        <a href="logout.php" class="btn btn-outline-danger btn-sm py-0 px-2 fw-bold" title="Sign Out">
+                            <i class="fa-solid fa-right-from-bracket"></i>
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
